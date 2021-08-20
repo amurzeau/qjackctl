@@ -1,0 +1,76 @@
+version: 0.1.1.{build}
+image: Visual Studio 2019
+environment:
+  matrix:
+    # 64 bits MinGW
+    - TARGET_NAME: win64
+      COMPILER_TYPE: MinGW
+      QT_TARGET: mingw81_64
+      COMPILER_PATH: C:\mingw-w64\x86_64-8.1.0-posix-seh-rt_v6-rev0\mingw64
+    # 32 bits MinGW
+    - TARGET_NAME: win32
+      COMPILER_TYPE: MinGW
+      QT_TARGET: mingw81_32
+      COMPILER_PATH: C:\mingw-w64\i686-8.1.0-posix-dwarf-rt_v6-rev0\mingw32
+    
+    # 64 bits MSVC
+    - TARGET_NAME: win64
+      COMPILER_TYPE: MSVC
+      QT_TARGET: msvc2019_64
+      CMAKE_ARCH: x64
+    # 32 bits MSVC
+    - TARGET_NAME: win32
+      COMPILER_TYPE: MSVC
+      QT_TARGET: msvc2019
+      CMAKE_ARCH: Win32
+install:
+- ps: |
+    Write-Host "Checking latest version of Jack ..."
+    $JACK_RELEASES_URL = "https://api.github.com/repos/jackaudio/jack2/releases"
+    $jack_releases = Invoke-WebRequest $JACK_RELEASES_URL | ConvertFrom-Json
+    $jack_latest_version = $jack_releases[0].tag_name
+    
+    Write-Host "Downloading Jack $env:TARGET_NAME $jack_latest_version ..."
+    $downloadUrl = "https://github.com/jackaudio/jack2-releases/releases/download/$jack_latest_version/jack2-$env:TARGET_NAME-$jack_latest_version.exe"
+    $exePath = "$($env:TEMP)\jack2_installer.exe"
+    
+    Write-Host "Downloading from $downloadUrl"
+    (New-Object Net.WebClient).DownloadFile($downloadUrl, $exePath)
+    Write-Host "Installing..."
+    cmd /c start /wait $exePath /SILENT /NORESTART /NOICONS /TYPE=full
+    Write-Host "Done installing Jack $env:TARGET_NAME $jack_latest_version"
+build_script:
+- ps: |
+    git submodule -q update --init --recursive 2>$null
+    mkdir "build_$env:TARGET_NAME"
+    cd "build_$env:TARGET_NAME"
+    
+    if($env:COMPILER_TYPE -eq "MinGW") {
+        $env:CC="gcc.exe"
+        $env:CXX="g++.exe"
+        $env:PATH="$env:COMPILER_PATH\bin;$env:PATH"
+        $env:CMAKE_GENERATOR="Ninja"
+        $env:CMAKE_PREFIX_PATH="C:\Qt\5.15\$env:QT_TARGET\lib\cmake"
+    } else {
+        $env:CMAKE_GENERATOR="Visual Studio 16 2019"
+        $env:CMAKE_PREFIX_PATH="C:\Qt\5.15\$env:QT_TARGET\lib\cmake"
+        $env:CMAKE_GENERATOR_PLATFORM="$env:CMAKE_ARCH"
+    }
+    cmake .. "-DCPACK_SYSTEM_NAME=$env:QT_TARGET" -DCONFIG_INSTALL_QT_DLLS=ON
+    if($LastExitCode -ne 0) { $host.SetShouldExit($LastExitCode )  }
+    cmake --build . --target package --config RelWithDebInfo
+    if($LastExitCode -ne 0) { $host.SetShouldExit($LastExitCode )  }
+    foreach ($file in $(ls qjackctl-*.zip)) { Push-AppveyorArtifact $file }
+deploy:
+  tag: $(APPVEYOR_REPO_TAG_NAME)
+  release: $(APPVEYOR_REPO_TAG_NAME)
+  description: 'qjacktl $(APPVEYOR_REPO_TAG_NAME)'
+  provider: GitHub
+  auth_token:
+    secure: ZLpI8aoNJxwWCJ9AFsXSBz7+bSOLOR0nuHi0engVUbpKZivwtwgKR7exIpnqawgM
+  artifact: /qjackctl.*\.zip/  # upload all binaries package (not tests logs)
+  draft: false
+  prerelease: false
+  force_update: true
+  on:
+    APPVEYOR_REPO_TAG: true        # deploy on tag push only
