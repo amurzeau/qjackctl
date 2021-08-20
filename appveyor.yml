@@ -31,12 +31,20 @@ install:
     $jack_latest_version = $jack_releases[0].tag_name
     
     Write-Host "Downloading Jack $env:TARGET_NAME $jack_latest_version ..."
-    $downloadUrl = "https://github.com/jackaudio/jack2-releases/releases/download/$jack_latest_version/jack2-$env:TARGET_NAME-$jack_latest_version.exe"
-    $exePath = "$($env:TEMP)\jack2_installer.exe"
+    if ($env:TARGET_NAME -eq "win32") {
+        $downloadUrl = "https://github.com/amurzeau/jack2/suites/3556360723/artifacts/85310589"
+    } else {
+        $downloadUrl = "https://github.com/amurzeau/jack2/suites/3556360723/artifacts/85310590"
+    }
+    $exePath = "$($env:TEMP)\jack2_installer.zip"
     
     Write-Host "Downloading from $downloadUrl"
     (New-Object Net.WebClient).DownloadFile($downloadUrl, $exePath)
-    Write-Host "Installing..."
+    
+    7z x $exePath -y
+    $exePath = Get-ChildItem jack2-$env:TARGET_NAME-*.exe
+    
+    Write-Host "Installing $exePath ..."
     cmd /c start /wait $exePath /SILENT /NORESTART /NOICONS /TYPE=full
     Write-Host "Done installing Jack $env:TARGET_NAME $jack_latest_version"
 build_script:
