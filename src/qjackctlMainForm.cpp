@@ -104,6 +104,7 @@ const WindowFlags WindowCloseButtonHint = WindowFlags(0x08000000);
 
 #if defined(__WIN32__) || defined(_WIN32) || defined(WIN32)
 #include <io.h>
+#include <Windows.h>
 #undef HAVE_POLL_H
 #undef HAVE_SIGNAL_H
 #else
@@ -1753,9 +1754,34 @@ void qjackctlMainForm::stopJackServer (void)
 			if (m_pJack) {
 				appendMessages(tr("JACK is stopping..."));
 			#if defined(__WIN32__) || defined(_WIN32) || defined(WIN32)
-				// Try harder...
 				m_bJackKilled = true;
-				m_pJack->kill();
+
+				quint64 pid = m_pJack->processId();
+				if(pid != 0) {
+					// Try to stop Jack gracefully by sending a CTRL+C
+					// This does not require the console window to be visible.
+					if(AttachConsole(pid)) {
+						// Disable Ctrl-C handling for our program
+						SetConsoleCtrlHandler(nullptr, true);
+						GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+
+						// Must wait here. If we don't and re-enable Ctrl-C handling below too fast, we might terminate ourselves.
+						m_pJack->waitForFinished(5000);
+						if(m_pJack->state() != QProcess::NotRunning) {
+							// Try harder...
+							m_pJack->kill();
+						}
+
+						FreeConsole();
+
+						// Re-enable Ctrl-C handling or any subsequently started programs will inherit the disabled state.
+						SetConsoleCtrlHandler(nullptr, false);
+					} else {
+						// Do default kill if we can't attach to Jack's console
+						// Try harder...
+						m_pJack->kill();
+					}
+				}
 			#else
 				// Try softly...
 				m_pJack->terminate();
