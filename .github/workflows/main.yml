@@ -59,7 +59,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install cmake ninja qt jack
+          brew install cmake ninja qt jack portaudio
 
       # Runs a set of commands using the runners shell
       - name: Build
@@ -166,10 +166,18 @@ jobs:
           $env:CC="gcc.exe"
           $env:CXX="g++.exe"
           $env:PATH="${{ steps.dependencies.outputs.MINGW_PATH }}\bin;$env:PATH"
+          
+          echo "Building portaudio"
+          git clone https://github.com/PortAudio/portaudio
+          git -C portaudio checkout a4aacd1293a6a62615bab60f4c959018da355bbb
+          cmake -S portaudio -B portaudio\build_cmake "-GMinGW Makefiles" -DPA_USE_ASIO=ON "-DCMAKE_INSTALL_PREFIX=$PWD/portaudio_install"
+          cmake --build portaudio\build_cmake --target install
+          
+          echo "Building qjackctl"
           git submodule -q update --init --recursive
           mkdir build
           
-          cmake -S . -B build "-GMinGW Makefiles" "-DCMAKE_PREFIX_PATH=${{ steps.dependencies.outputs.QT_PATH }}\lib\cmake" -DCONFIG_INSTALL_QT=ON
+          cmake -S . -B build "-GMinGW Makefiles" "-DCMAKE_PREFIX_PATH=${{ steps.dependencies.outputs.QT_PATH }}\lib\cmake" "-DPortAudio_ROOT=$PWD/portaudio_install" -DCONFIG_INSTALL_QT=ON
           if ($lastexitcode -ne 0) { exit $lastexitcode }
           
           cmake --build build --target package --config RelWithDebInfo -- -j4
